@@ -138,9 +138,10 @@ class AuthService:
         access_token = security.create_access_token(user_id)
         refresh_token_str = security.create_refresh_token(user_id)
 
-        # Store refresh token for revocation
+        # Store hashed refresh token for revocation
+        # We store only the hash to protect against DB leaks
         new_refresh_token = RefreshToken(
-            token=refresh_token_str,
+            token=security.hash_password(refresh_token_str),
             user_id=user_id,
             expires_at=datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
         )
@@ -158,7 +159,7 @@ class AuthService:
     async def refresh_tokens(db: AsyncSession, refresh_token: str) -> Token:
         """Generates new access and refresh tokens using a valid refresh token.
 
-        Implements token rotation and revocation.
+        Implements token rotation and revocation with hashed token validation.
         """
         try:
             payload = security.decode_token(refresh_token)
@@ -172,32 +173,39 @@ class AuthService:
                 detail="Invalid refresh token"
             )
 
-        # Check if token exists and is not revoked
+        # We must fetch active tokens for this user and verify the hash
+        # Since we can't query by hash (due to bcrypt salt), we query by user_id
         result = await db.execute(
             select(RefreshToken).where(
-                RefreshToken.token == refresh_token,
+                RefreshToken.user_id == uuid.UUID(user_id),
                 RefreshToken.revoked == False
             )
         )
-        db_token = result.scalar_one_or_none()
+        db_tokens = result.scalars().all()
 
-        if not db_token:
-            log_audit("token_refresh_failed", {"user_id": user_id, "reason": "token_revoked_or_missing"})
+        target_token = None
+        for db_t in db_tokens:
+            if security.verify_password(refresh_token, db_t.token):
+                target_token = db_t
+                break
+
+        if not target_token:
+            log_audit("token_refresh_failed", {"user_id": user_id, "reason": "token_not_found_or_revoked"})
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Refresh token revoked or invalid"
             )
 
         # Revoke old token (Token Rotation)
-        db_token.revoked = True
+        target_token.revoked = True
         
         # Create new tokens
         access_token = security.create_access_token(user_id)
         new_refresh_token_str = security.create_refresh_token(user_id)
 
-        # Store new refresh token
+        # Store new hashed refresh token
         new_db_token = RefreshToken(
-            token=new_refresh_token_str,
+            token=security.hash_password(new_refresh_token_str),
             user_id=uuid.UUID(user_id),
             expires_at=datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
         )
@@ -214,15 +222,27 @@ class AuthService:
     @staticmethod
     async def logout(db: AsyncSession, refresh_token: str) -> None:
         """Revokes a refresh token to logout the user."""
-        result = await db.execute(
-            select(RefreshToken).where(RefreshToken.token == refresh_token)
-        )
-        db_token = result.scalar_one_or_none()
-
-        if db_token:
-            user_id = db_token.user_id  # Capture user_id before commit
-            db_token.revoked = True
-            await db.commit()
-            log_audit("logout", {"user_id": str(user_id)})
-        else:
+        try:
+            payload = security.decode_token(refresh_token)
+            user_id = payload.get("sub")
+        except Exception:
             log_audit("logout_attempt_invalid_token", {})
+            return
+
+        # Fetch active tokens for this user and verify hash
+        result = await db.execute(
+            select(RefreshToken).where(
+                RefreshToken.user_id == uuid.UUID(user_id),
+                RefreshToken.revoked == False
+            )
+        )
+        db_tokens = result.scalars().all()
+
+        for db_t in db_tokens:
+            if security.verify_password(refresh_token, db_t.token):
+                db_t.revoked = True
+                await db.commit()
+                log_audit("logout", {"user_id": str(user_id)})
+                return
+        
+        log_audit("logout_attempt_token_not_found", {"user_id": user_id})
