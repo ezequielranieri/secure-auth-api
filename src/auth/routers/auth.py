@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, status, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.database import get_db
@@ -45,18 +45,24 @@ async def login(
 
 @router.post("/refresh", response_model=Token)
 async def refresh_token(
-    refresh_token: str,
+    refresh_token: str = Body(..., embed=True),
     db: AsyncSession = Depends(get_db)
 ):
-    """Refreshes access and refresh tokens."""
+    """Refreshes access and refresh tokens.
+    
+    Receives refresh_token in the request body.
+    """
     return await AuthService.refresh_tokens(db, refresh_token)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
-    refresh_token: str,
+    refresh_token: str = Body(..., embed=True),
     db: AsyncSession = Depends(get_db)
 ):
-    """Invalidates a refresh token."""
+    """Invalidates a refresh token.
+    
+    Receives refresh_token in the request body.
+    """
     await AuthService.logout(db, refresh_token)
     return None

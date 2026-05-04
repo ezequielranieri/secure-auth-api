@@ -6,6 +6,10 @@ from sqlalchemy.pool import StaticPool
 
 from src.auth.main import app
 from src.auth.database import Base, get_db
+from src.auth.config import settings
+
+# Disable rate limiting for tests
+app.state.limiter.enabled = False
 
 # Use in-memory SQLite for tests
 SQLALCHEMY_DATABASE_URL = "sqlite+aiosqlite:///:memory:"

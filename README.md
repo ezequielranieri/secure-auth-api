@@ -69,7 +69,8 @@ The project follows a **Layered Architecture** to ensure separation of concerns 
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/your-username/secure-auth-api.git
+   git clone https://github.com/ezequielranieri/secure-auth-api.git
+
    cd secure-auth-api
    ```
 

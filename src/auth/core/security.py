@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -52,12 +53,14 @@ def create_token(
     Returns:
         The encoded JWT token.
     """
-    expire = datetime.now(timezone.utc) + expires_delta
+    now = datetime.now(timezone.utc)
+    expire = now + expires_delta
     to_encode = {
         "sub": str(subject),
         "exp": expire,
         "type": token_type,
-        "iat": datetime.now(timezone.utc)
+        "iat": now,
+        "jti": str(uuid.uuid4())  # Ensure token uniqueness
     }
     encoded_jwt = jwt.encode(
         to_encode, settings.secret_key, algorithm=settings.algorithm

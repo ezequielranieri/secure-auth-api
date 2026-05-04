@@ -1,3 +1,4 @@
+import uuid
 import structlog
 from datetime import datetime, timezone, timedelta
 from typing import Any
@@ -130,10 +131,9 @@ class AuthService:
         user.failed_login_attempts = 0
         user.locked_until = None
         
-        user_id = user.id  # Capture ID before commit/potential expiration
+        user_id = user.id  # Capture ID before commit
         
         await db.commit()
-        # We don't necessarily need to refresh here if we only need the ID
         
         access_token = security.create_access_token(user_id)
         refresh_token_str = security.create_refresh_token(user_id)
@@ -220,8 +220,9 @@ class AuthService:
         db_token = result.scalar_one_or_none()
 
         if db_token:
+            user_id = db_token.user_id  # Capture user_id before commit
             db_token.revoked = True
             await db.commit()
-            log_audit("logout", {"user_id": str(db_token.user_id)})
+            log_audit("logout", {"user_id": str(user_id)})
         else:
             log_audit("logout_attempt_invalid_token", {})
