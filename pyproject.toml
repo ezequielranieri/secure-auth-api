@@ -2,7 +2,7 @@
 name = "secure-auth-api"
 version = "0.1.0"
 description = "Secure Authentication REST API with FastAPI"
-authors = [{name = "Ezequiel Ranieri", email = "ezequielranieri@proton.me"}]
+authors = [{name = "Ezequiel Ranieri", email = "ez.ranieri@gmail.com"}]
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.111.0",
