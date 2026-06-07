@@ -12,6 +12,7 @@ class Settings(BaseSettings):
         access_token_expire_minutes: Expiration time for access tokens.
         refresh_token_expire_days: Expiration time for refresh tokens.
         database_url: Connection string for the database.
+        redis_url: Connection string for the Redis storage.
         max_failed_login_attempts: Maximum number of failed login attempts before lockout.
         lockout_duration_minutes: Duration of account lockout in minutes.
     """
@@ -27,6 +28,9 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = "sqlite+aiosqlite:///./auth.db"
+
+    # Redis
+    redis_url: str = "redis://localhost:6379/0"
 
     # Brute force protection
     max_failed_login_attempts: int = 5

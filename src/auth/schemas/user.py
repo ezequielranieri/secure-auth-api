@@ -21,10 +21,13 @@ class UserRegister(UserBase):
         """Validates that the password meets security requirements.
 
         Rules:
+            - Must not exceed 72 bytes (bcrypt limitation).
             - At least 8 characters long.
             - Contains at least one uppercase letter.
             - Contains at least one digit.
         """
+        if len(v.encode("utf-8")) > 72:
+            raise ValueError("Password must not exceed 72 characters")
         if len(v) < 8:
             raise ValueError("Password must be at least 8 characters")
         if not any(c.isupper() for c in v):

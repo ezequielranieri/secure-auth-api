@@ -1,107 +1,183 @@
-# 🔐 Secure Auth API: High-Maturity Asynchronous Identity Protection
+# 🔐 Secure Auth API
 
-I built this production-ready authentication backend with FastAPI to demonstrate how to implement industry-standard security patterns in an asynchronous Python environment.
+A production-ready authentication backend built with FastAPI, designed to
+go beyond basic JWT tutorials and tackle real identity security problems:
+token hijacking, brute force attacks, and session integrity at scale.
 
-## 🌟 About the Developer
-Hello! I'm **Ezequiel Ranieri**. I am a self-taught developer who discovered the world of programming through curiosity and a passion for building things. Everything I know—from architecture patterns to distributed systems—I've learned on my own through books, technical documentation, videos, and endless hours of practice.
+## 👤 About the Developer
 
-I created this project to consolidate and demonstrate my understanding of software development. I don't claim to be a senior architect; I am a dedicated learner who enjoys solving complex technical challenges and building robust software that works under pressure.
+I'm **Ezequiel Ranieri**, a self-taught Backend & Security Engineer
+specializing in distributed systems and authentication. Everything I know —
+from architecture patterns to async database design — I built through
+documentation, hands-on projects, and real client work.
 
-**Contact:**
-- **Email:** ez.ranieri@gmail.com
-- **GitHub:** https://github.com/ezequielranieri
-- **LinkedIn:** https://www.linkedin.com/in/ezequielranieri/
+Being self-taught isn't a gap in my background. It's how I learned to
+think independently, make architectural decisions under uncertainty, and
+ship software that actually works.
+
+- 📧 ez.ranieri@gmail.com
+- 🐙 [GitHub](https://github.com/ezequielranieri)
+- 💼 [LinkedIn](https://www.linkedin.com/in/ezequielranieri/)
 
 ---
 
 ## 🎯 Why this project?
-I built this project to move beyond basic JWT tutorials and explore the complexities of building a resilient security layer. My main goal was to solve critical identity problems like token hijacking and brute force attacks. I wanted to see how far I could push FastAPI's performance while maintaining a "Security-First" architecture, implementing advanced features like token rotation and granular rate limiting.
 
-## 🏗 System Architecture / Data Flow
-My project follows a layered architecture to ensure a clean separation of concerns:
+Most authentication tutorials stop at "here's how JWT works." This project
+starts where they end.
 
-1.  **Rate Limiting Layer**: Every request first hits SlowAPI to prevent endpoint abuse.
-2.  **Middleware Stack**: I handle Request IDs for traceability and structured audit logging before reaching the logic.
-3.  **Router Layer**: I manage HTTP validation and status codes using Pydantic schemas.
-4.  **Service Layer**: This is where I centralize the business logic, orchestrating database transactions and security primitives.
-5.  **Security Core**: I utilize Bcrypt for hashing and Jose for JWT management, ensuring cryptographic integrity.
-6.  **Persistence Layer**: I use SQLAlchemy 2.0 with full `asyncio` support to handle data operations without blocking.
+The goal was to implement a security-first architecture that addresses
+the threats a production identity system actually faces: token reuse after
+rotation, brute force at scale, and session revocation without performance
+tradeoffs.
 
-```mermaid
-graph TD
-    Client[Client / Frontend] --> RL[Rate Limiter / SlowAPI]
-    RL --> Router[Routers /api/v1/auth]
-    Router --> Middleware[Middleware: Audit, Error, RequestID]
-    Middleware --> AuthService[AuthService: Business Logic]
-    AuthService --> Security[Core Security: JWT & Hashing]
-    AuthService --> DB[(SQLite Database / Async)]
-    Security --> AuthService
-    DB --> AuthService
-    AuthService --> Router
-    Router --> Client
-```
+---
+
+## 🏗 Architecture
+
+The system follows a strict layered architecture with clear separation of
+concerns:
+Client
+│
+▼
+Rate Limiter (SlowAPI + Redis)     ← distributed, multi-worker safe
+│
+▼
+Middleware Stack                   ← Request ID, Audit Log, Error Handling
+│
+▼
+Router Layer                       ← HTTP validation via Pydantic schemas
+│
+▼
+AuthService                        ← business logic, no HTTP concerns
+│
+├── Security Core (JWT + Bcrypt)
+└── Persistence (SQLAlchemy 2.0 async)
+
+---
+
+## 🛡 Security Features
+
+### Brute Force Protection
+Failed login attempts are tracked per user. Exceeding the configured
+threshold triggers a temporary account lockout with structured audit logging.
+
+### Token Rotation & Revocation
+Refresh tokens are stored in the database as Bcrypt hashes — never in
+plaintext — protecting against database leaks. Each use rotates the token:
+the old one is revoked, a new one is issued.
+
+### Distributed Rate Limiting
+Critical endpoints (register, login) are rate-limited per IP using SlowAPI
+with a Redis backend, ensuring limits hold correctly across multiple workers.
+
+### Audit Logging
+A dedicated middleware captures every security-relevant request: method,
+path, status code, client IP, processing time, and a unique `X-Request-ID`
+for correlation across logs.
+
+### Password Validation
+Passwords are validated before hashing: minimum length, complexity rules,
+and a hard 72-byte ceiling enforced at the schema level to respect bcrypt's
+internal limit.
+
+---
 
 ## 🛠 Tech Stack
-- **FastAPI**: Used as the high-performance asynchronous web framework.
-- **SQLAlchemy 2.0**: Employed as the async ORM for robust database interaction.
-- **Pydantic v2**: Utilized for strict data validation and settings management.
-- **Alembic**: I use this to handle database migrations and versioning.
-- **Passlib (Bcrypt)**: Implemented for secure, hardware-resilient password hashing.
-- **SlowAPI**: Integrated to provide granular rate limiting per IP and endpoint.
-- **Structlog**: Used to generate structured, JSON-ready logs for observability.
+
+| Technology | Purpose |
+|---|---|
+| **FastAPI** | Async web framework |
+| **SQLAlchemy 2.0** | Async ORM |
+| **Pydantic v2** | Data validation & settings |
+| **Alembic** | Database migrations |
+| **Passlib (Bcrypt)** | Password hashing |
+| **SlowAPI + Redis** | Distributed rate limiting |
+| **Structlog** | Structured JSON logging |
+| **aiosqlite** | Async SQLite driver (dev) |
 
 ---
 
-## 🚀 Quick Start Guide
+## 🚀 Quick Start
 
-**Prerequisites:** Python 3.12+
+**Prerequisites:** Python 3.12+, Docker
 
-1.  **Clone and setup**:
-    ```bash
-    git clone https://github.com/ezequielranieri/secure-auth-api.git
-    cd secure-auth-api
-    cp .env.example .env  # Configure your SECRET_KEY here
-    ```
+```bash
+# Clone and configure
+git clone https://github.com/ezequielranieri/secure-auth-api.git
+cd secure-auth-api
+cp .env.example .env  # set your SECRET_KEY
 
-2.  **Install dependencies**:
-    ```bash
-    pip install -e .
-    # For testing: pip install -e ".[dev]"
-    ```
+# Start Redis
+docker compose up -d
 
-3.  **Prepare database**:
-    ```bash
-    alembic upgrade head
-    ```
+# Install dependencies
+pip install -e .
 
-4.  **Run the application**:
-    ```bash
-    uvicorn src.auth.main:app --reload
-    ```
+# Run migrations
+alembic upgrade head
 
-## 💡 Usage / Endpoints
-The API documentation is automatically available at `/api/v1/docs`.
+# Start the server
+uvicorn src.auth.main:app --reload
+```
 
-- `POST /api/v1/auth/register`: Create a new account (Rate limited).
-- `POST /api/v1/auth/login`: Authenticate and receive Access + Refresh tokens.
-- `POST /api/v1/auth/refresh`: Rotate tokens using a valid Refresh Token.
-- `POST /api/v1/auth/logout`: Revoke the current session.
-- `GET /api/v1/users/me`: Access your secure profile (Requires Bearer Token).
+API docs available at `http://localhost:8000/api/v1/docs`
 
 ---
 
-## 🧠 What I Learned
-Developing this project taught me the importance of treating security as a core architectural pillar rather than an afterthought. I gained deep experience in asynchronous database patterns and the nuances of JWT-based session management, specifically around token revocation.
+## 📡 Endpoints
 
-**Self-Critique & Modern Improvements:**
-Looking back at the code today, I identified some areas where my younger self was less efficient:
-- **Token Verification Bottleneck**: My current refresh logic iterates through a user's active tokens and hashes them in a loop to find a match. This is `O(n)` and computationally heavy. Today, I would store the `jti` (JWT ID) in a fast-lookup index or use a secure hash lookup in the DB to make this `O(1)`.
-- **Static Service Methods**: I used `@staticmethod` for my `AuthService`. While simple, it makes unit testing harder. I would now refactor this to use FastAPI's Dependency Injection system to inject service instances.
-- **Database Scalability**: Using SQLite was great for simplicity, but for a production identity system, I would migrate to PostgreSQL to handle concurrent writes and better locking mechanisms.
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/v1/auth/register` | Register new account (rate limited) |
+| POST | `/api/v1/auth/login` | Authenticate, receive token pair |
+| POST | `/api/v1/auth/refresh` | Rotate tokens |
+| POST | `/api/v1/auth/logout` | Revoke session |
+| GET | `/api/v1/users/me` | Authenticated user profile |
 
-## 🗺 Roadmap
-- [ ] Migrate to PostgreSQL for better production scalability.
-- [ ] Implement Two-Factor Authentication (2FA) via TOTP.
-- [ ] Integrate a proper Secrets Manager for environment variables.
+---
 
-Thank you for checking out my work! I'm always open to feedback and looking for new opportunities to learn and grow.
+## 🔬 Technical Retrospective
+
+Honest assessment of current design decisions and how I'd evolve them.
+
+### ✅ Resolved
+
+**Distributed Rate Limiting**
+Initial implementation used SlowAPI with an in-memory backend — correct
+behavior with a single worker, silent failure with multiple. Migrated to
+Redis backend via `storage_uri`, making limits consistent across any number
+of workers.
+
+**Password Length Validation**
+Bcrypt silently truncates passwords over 72 bytes, which can create a
+false sense of security. Added explicit byte-length validation at the
+Pydantic schema level, returning a clear 422 before the hash operation.
+
+### 🔄 In Progress
+
+**Token Lookup: O(n) → O(1)**
+Current refresh logic queries all active tokens for a user and runs
+`bcrypt.verify()` in a loop to find a match. Bcrypt is intentionally slow —
+this is O(n × bcrypt_cost). The fix: store the `jti` (JWT ID) as an indexed
+column in `refresh_tokens` and look up directly by it, eliminating the loop.
+
+**Static Service Methods → Dependency Injection**
+`AuthService` currently uses `@staticmethod`, which couples the router
+directly to the implementation and makes unit testing require more setup.
+Refactoring to FastAPI's `Depends()` system will make the service injectable
+and independently testable.
+
+### 🗺 Roadmap
+
+- [ ] PostgreSQL migration (replace aiosqlite for production concurrency)
+- [ ] Token Family Tracking (detect and block token reuse attacks)
+- [ ] Two-Factor Authentication via TOTP
+- [ ] Prometheus metrics (`login_attempts_total`, `lockouts_total`)
+- [ ] Secrets Manager integration
+
+---
+
+## 📄 License
+
+MIT
