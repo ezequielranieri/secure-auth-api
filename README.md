@@ -154,22 +154,17 @@ Bcrypt silently truncates passwords over 72 bytes, which can create a
 false sense of security. Added explicit byte-length validation at the
 Pydantic schema level, returning a clear 422 before the hash operation.
 
-### 🔄 In Progress
+**Token Lookup: O(1) via JTI Index**
+Refresh token verification previously iterated all active tokens for a user running bcrypt.verify() in a loop — O(n × bcrypt_cost). Added a jti (JWT ID) column with a unique index to refresh_tokens, stored at token creation. Lookup is now a direct indexed query, eliminating the loop entirely. expires_at is also validated at the DB level on every lookup.
 
-**Token Lookup: O(n) → O(1)**
-Current refresh logic queries all active tokens for a user and runs
-`bcrypt.verify()` in a loop to find a match. Bcrypt is intentionally slow —
-this is O(n × bcrypt_cost). The fix: store the `jti` (JWT ID) as an indexed
-column in `refresh_tokens` and look up directly by it, eliminating the loop.
-
-**Static Service Methods → Dependency Injection**
-`AuthService` currently uses `@staticmethod`, which couples the router
-directly to the implementation and makes unit testing require more setup.
-Refactoring to FastAPI's `Depends()` system will make the service injectable
-and independently testable.
+**AuthService → Dependency Injection**
+Refactored AuthService from @staticmethod methods to an injectable class instantiated via FastAPI's Depends() system. get_auth_service() binds the DB session at request time, decoupling the router from the implementation and making the service independently testable.
 
 ### 🗺 Roadmap
 
+- [x] Distributed rate limiting with Redis backend
+- [x] O(1) token lookup via JTI index
+- [x] Dependency injection for AuthService
 - [ ] PostgreSQL migration (replace aiosqlite for production concurrency)
 - [ ] Token Family Tracking (detect and block token reuse attacks)
 - [ ] Two-Factor Authentication via TOTP
