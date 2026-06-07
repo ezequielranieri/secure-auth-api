@@ -42,7 +42,7 @@ def create_token(
     subject: str | Any,
     expires_delta: timedelta,
     token_type: str = "access"
-) -> str:
+) -> tuple[str, str]:
     """Creates a JWT token.
 
     Args:
@@ -51,31 +51,33 @@ def create_token(
         token_type: The type of token ('access' or 'refresh').
 
     Returns:
-        The encoded JWT token.
+        A tuple of (encoded_jwt, jti).
     """
     now = datetime.now(timezone.utc)
     expire = now + expires_delta
+    jti = str(uuid.uuid4())
     to_encode = {
         "sub": str(subject),
         "exp": expire,
         "type": token_type,
         "iat": now,
-        "jti": str(uuid.uuid4())  # Ensure token uniqueness
+        "jti": jti
     }
     encoded_jwt = jwt.encode(
         to_encode, settings.secret_key, algorithm=settings.algorithm
     )
-    return encoded_jwt
+    return encoded_jwt, jti
 
 
 def create_access_token(subject: str | Any) -> str:
     """Helper to create an access token."""
     expires = timedelta(minutes=settings.access_token_expire_minutes)
-    return create_token(subject, expires, token_type="access")
+    token, _ = create_token(subject, expires, token_type="access")
+    return token
 
 
-def create_refresh_token(subject: str | Any) -> str:
-    """Helper to create a refresh token."""
+def create_refresh_token(subject: str | Any) -> tuple[str, str]:
+    """Helper to create a refresh token. Returns (token, jti)."""
     expires = timedelta(days=settings.refresh_token_expire_days)
     return create_token(subject, expires, token_type="refresh")
 

@@ -136,11 +136,12 @@ class AuthService:
         await db.commit()
         
         access_token = security.create_access_token(user_id)
-        refresh_token_str = security.create_refresh_token(user_id)
+        refresh_token_str, refresh_jti = security.create_refresh_token(user_id)
 
         # Store hashed refresh token for revocation
         # We store only the hash to protect against DB leaks
         new_refresh_token = RefreshToken(
+            jti=refresh_jti,
             token=security.hash_password(refresh_token_str),
             user_id=user_id,
             expires_at=datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
@@ -173,21 +174,22 @@ class AuthService:
                 detail="Invalid refresh token"
             )
 
-        # We must fetch active tokens for this user and verify the hash
-        # Since we can't query by hash (due to bcrypt salt), we query by user_id
+        jti = payload.get("jti")
+        if not jti:
+            log_audit("token_refresh_failed", {"reason": "missing_jti"})
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token"
+            )
+
         result = await db.execute(
             select(RefreshToken).where(
-                RefreshToken.user_id == uuid.UUID(user_id),
-                RefreshToken.revoked == False
+                RefreshToken.jti == jti,
+                RefreshToken.revoked == False,
+                RefreshToken.expires_at > datetime.now(timezone.utc)
             )
         )
-        db_tokens = result.scalars().all()
-
-        target_token = None
-        for db_t in db_tokens:
-            if security.verify_password(refresh_token, db_t.token):
-                target_token = db_t
-                break
+        target_token = result.scalar_one_or_none()
 
         if not target_token:
             log_audit("token_refresh_failed", {"user_id": user_id, "reason": "token_not_found_or_revoked"})
@@ -201,10 +203,11 @@ class AuthService:
         
         # Create new tokens
         access_token = security.create_access_token(user_id)
-        new_refresh_token_str = security.create_refresh_token(user_id)
+        new_refresh_token_str, new_jti = security.create_refresh_token(user_id)
 
         # Store new hashed refresh token
         new_db_token = RefreshToken(
+            jti=new_jti,
             token=security.hash_password(new_refresh_token_str),
             user_id=uuid.UUID(user_id),
             expires_at=datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
@@ -229,20 +232,23 @@ class AuthService:
             log_audit("logout_attempt_invalid_token", {})
             return
 
-        # Fetch active tokens for this user and verify hash
+        jti = payload.get("jti")
+        if not jti:
+            log_audit("logout_attempt_invalid_token", {})
+            return
+
         result = await db.execute(
             select(RefreshToken).where(
-                RefreshToken.user_id == uuid.UUID(user_id),
+                RefreshToken.jti == jti,
                 RefreshToken.revoked == False
             )
         )
-        db_tokens = result.scalars().all()
+        db_token = result.scalar_one_or_none()
 
-        for db_t in db_tokens:
-            if security.verify_password(refresh_token, db_t.token):
-                db_t.revoked = True
-                await db.commit()
-                log_audit("logout", {"user_id": str(user_id)})
-                return
+        if db_token:
+            db_token.revoked = True
+            await db.commit()
+            log_audit("logout", {"user_id": str(user_id)})
+            return
         
         log_audit("logout_attempt_token_not_found", {"user_id": user_id})

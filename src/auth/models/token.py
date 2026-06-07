@@ -12,7 +12,8 @@ class RefreshToken(Base):
 
     Attributes:
         id: Unique identifier.
-        token: The refresh token string.
+        jti: JWT ID for O(1) token lookup.
+        token: Bcrypt hash of the refresh token string.
         user_id: Reference to the user who owns the token.
         expires_at: Expiration timestamp.
         revoked: Whether the token has been revoked.
@@ -24,6 +25,7 @@ class RefreshToken(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True, default=uuid.uuid4
     )
+    jti: Mapped[str] = mapped_column(String(36), unique=True, index=True)
     token: Mapped[str] = mapped_column(String(512), unique=True, index=True)
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
@@ -35,7 +37,3 @@ class RefreshToken(Base):
     )
 
     user = relationship("User", back_populates="refresh_tokens")
-
-
-# Update User model to include relationship (I'll do this in a separate replace call if needed, 
-# but I'll add it here for completeness if I were writing the file)
