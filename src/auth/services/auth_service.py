@@ -5,9 +5,10 @@ from typing import Any
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import HTTPException, status
+from fastapi import Depends, HTTPException, status
 
 from src.auth.config import settings
+from src.auth.database import get_db
 from src.auth.models.user import User
 from src.auth.models.token import RefreshToken
 from src.auth.schemas.user import UserRegister, UserLogin
@@ -32,12 +33,13 @@ def log_audit(event: str, detail: dict[str, Any]) -> None:
 class AuthService:
     """Business logic for authentication operations."""
 
-    @staticmethod
-    async def register_user(db: AsyncSession, user_in: UserRegister) -> User:
+    def __init__(self, db: AsyncSession) -> None:
+        self.db = db
+
+    async def register_user(self, user_in: UserRegister) -> User:
         """Registers a new user in the system.
 
         Args:
-            db: Database session.
             user_in: Registration data.
 
         Returns:
@@ -47,7 +49,7 @@ class AuthService:
             HTTPException: If the email is already registered.
         """
         # Check if user exists
-        result = await db.execute(select(User).where(User.email == user_in.email))
+        result = await self.db.execute(select(User).where(User.email == user_in.email))
         if result.scalar_one_or_none():
             log_audit("registration_failed", {"email": user_in.email, "reason": "email_exists"})
             raise HTTPException(
@@ -62,21 +64,19 @@ class AuthService:
             is_active=True,  # Default to active for this project
             is_verified=False
         )
-        db.add(new_user)
-        await db.commit()
-        await db.refresh(new_user)
+        self.db.add(new_user)
+        await self.db.commit()
+        await self.db.refresh(new_user)
 
         log_audit("user_registered", {"user_id": str(new_user.id), "email": new_user.email})
         return new_user
 
-    @staticmethod
-    async def login_user(db: AsyncSession, login_data: UserLogin) -> Token:
+    async def login_user(self, login_data: UserLogin) -> Token:
         """Authenticates a user and generates tokens.
 
         Implements brute force protection and audit logging.
 
         Args:
-            db: Database session.
             login_data: Login credentials.
 
         Returns:
@@ -85,7 +85,7 @@ class AuthService:
         Raises:
             HTTPException: For invalid credentials, locked accounts, or inactive users.
         """
-        result = await db.execute(select(User).where(User.email == login_data.email))
+        result = await self.db.execute(select(User).where(User.email == login_data.email))
         user = result.scalar_one_or_none()
 
         if not user:
@@ -120,7 +120,7 @@ class AuthService:
                 user.locked_until = datetime.now(timezone.utc) + lock_duration
                 log_audit("account_locked", {"user_id": str(user.id), "email": user.email})
             
-            await db.commit()
+            await self.db.commit()
             log_audit("login_failed", {"user_id": str(user.id), "reason": "invalid_password"})
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -133,7 +133,7 @@ class AuthService:
         
         user_id = user.id  # Capture ID before commit
         
-        await db.commit()
+        await self.db.commit()
         
         access_token = security.create_access_token(user_id)
         refresh_token_str, refresh_jti = security.create_refresh_token(user_id)
@@ -146,8 +146,8 @@ class AuthService:
             user_id=user_id,
             expires_at=datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
         )
-        db.add(new_refresh_token)
-        await db.commit()
+        self.db.add(new_refresh_token)
+        await self.db.commit()
 
         log_audit("login_success", {"user_id": str(user_id)})
         
@@ -156,8 +156,7 @@ class AuthService:
             refresh_token=refresh_token_str
         )
 
-    @staticmethod
-    async def refresh_tokens(db: AsyncSession, refresh_token: str) -> Token:
+    async def refresh_tokens(self, refresh_token: str) -> Token:
         """Generates new access and refresh tokens using a valid refresh token.
 
         Implements token rotation and revocation with hashed token validation.
@@ -182,7 +181,7 @@ class AuthService:
                 detail="Invalid refresh token"
             )
 
-        result = await db.execute(
+        result = await self.db.execute(
             select(RefreshToken).where(
                 RefreshToken.jti == jti,
                 RefreshToken.revoked == False,
@@ -212,8 +211,8 @@ class AuthService:
             user_id=uuid.UUID(user_id),
             expires_at=datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
         )
-        db.add(new_db_token)
-        await db.commit()
+        self.db.add(new_db_token)
+        await self.db.commit()
 
         log_audit("token_refreshed", {"user_id": user_id})
 
@@ -222,8 +221,7 @@ class AuthService:
             refresh_token=new_refresh_token_str
         )
 
-    @staticmethod
-    async def logout(db: AsyncSession, refresh_token: str) -> None:
+    async def logout(self, refresh_token: str) -> None:
         """Revokes a refresh token to logout the user."""
         try:
             payload = security.decode_token(refresh_token)
@@ -237,7 +235,7 @@ class AuthService:
             log_audit("logout_attempt_invalid_token", {})
             return
 
-        result = await db.execute(
+        result = await self.db.execute(
             select(RefreshToken).where(
                 RefreshToken.jti == jti,
                 RefreshToken.revoked == False
@@ -247,8 +245,20 @@ class AuthService:
 
         if db_token:
             db_token.revoked = True
-            await db.commit()
+            await self.db.commit()
             log_audit("logout", {"user_id": str(user_id)})
             return
         
         log_audit("logout_attempt_token_not_found", {"user_id": user_id})
+
+
+def get_auth_service(db: AsyncSession = Depends(get_db)) -> AuthService:
+    """FastAPI dependency that provides an AuthService instance.
+
+    Args:
+        db: Database session injected by FastAPI.
+
+    Returns:
+        An AuthService instance bound to the current session.
+    """
+    return AuthService(db)
