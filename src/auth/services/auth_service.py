@@ -13,6 +13,7 @@ from src.auth.models.user import User
 from src.auth.models.token import RefreshToken
 from src.auth.schemas.user import UserRegister, UserLogin
 from src.auth.schemas.token import Token
+from src.auth.schemas.totp import LoginResponse
 from src.auth.core import security
 
 
@@ -71,7 +72,7 @@ class AuthService:
         log_audit("user_registered", {"user_id": str(new_user.id), "email": new_user.email})
         return new_user
 
-    async def login_user(self, login_data: UserLogin) -> Token:
+    async def login_user(self, login_data: UserLogin) -> LoginResponse:
         """Authenticates a user and generates tokens.
 
         Implements brute force protection and audit logging.
@@ -136,16 +137,22 @@ class AuthService:
         # Successful login
         user.failed_login_attempts = 0
         user.locked_until = None
-        
+
         user_id = user.id  # Capture ID before commit
-        
+        # Capture 2FA status before commit to avoid MissingGreenlet after session expires
+        is_2fa_enabled = user.totp_enabled and user.totp_secret
+
         await self.db.commit()
-        
+
+        # If 2FA is enabled, return a temporary token instead of full tokens
+        if is_2fa_enabled:
+            temp_token = security.create_temp_token(str(user_id))
+            log_audit("login_2fa_required", {"user_id": str(user_id)})
+            return LoginResponse(two_fa_required=True, temp_token=temp_token)
+
         access_token = security.create_access_token(user_id)
         refresh_token_str, refresh_jti = security.create_refresh_token(user_id)
 
-        # Store hashed refresh token for revocation
-        # We store only the hash to protect against DB leaks
         new_refresh_token = RefreshToken(
             jti=refresh_jti,
             token=security.hash_password(refresh_token_str),
@@ -156,8 +163,65 @@ class AuthService:
         await self.db.commit()
 
         log_audit("login_success", {"user_id": str(user_id)})
-        
-        return Token(
+
+        return LoginResponse(
+            access_token=access_token,
+            refresh_token=refresh_token_str
+        )
+
+    async def complete_2fa_login(self, temp_token: str, code: str) -> LoginResponse:
+        """Completes login for users with 2FA enabled.
+
+        Args:
+            temp_token: The temporary token from the first login step.
+            code: The TOTP code from the authenticator app.
+
+        Returns:
+            A LoginResponse with full access and refresh tokens.
+
+        Raises:
+            HTTPException: If temp token is invalid or TOTP code is wrong.
+        """
+        import uuid as uuid_module
+        from src.auth.services.totp_service import TOTPService
+        from src.auth.core.security import decode_temp_token
+
+        payload = decode_temp_token(temp_token)
+        user_id = payload.get("sub")
+
+        result = await self.db.execute(
+            select(User).where(User.id == uuid_module.UUID(user_id))
+        )
+        user = result.scalar_one_or_none()
+
+        if not user or not user.totp_enabled or not user.totp_secret:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid request"
+            )
+
+        if not TOTPService.verify_code(user.totp_secret, code):
+            log_audit("2fa_login_failed", {"user_id": user_id, "reason": "invalid_totp"})
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid TOTP code"
+            )
+
+        access_token = security.create_access_token(user_id)
+        refresh_token_str, refresh_jti = security.create_refresh_token(user_id)
+
+        new_refresh_token = RefreshToken(
+            jti=refresh_jti,
+            token=security.hash_password(refresh_token_str),
+            user_id=user.id,
+            expires_at=datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
+        )
+        self.db.add(new_refresh_token)
+        await self.db.commit()
+
+        log_audit("2fa_login_success", {"user_id": user_id})
+
+        return LoginResponse(
             access_token=access_token,
             refresh_token=refresh_token_str
         )

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Request, status, Body
 
 from src.auth.schemas.user import UserRegister, UserLogin, UserResponse
 from src.auth.schemas.token import Token
+from src.auth.schemas.totp import LoginStep2Request, LoginResponse
 from src.auth.services.auth_service import AuthService, get_auth_service
 from src.auth.core.rate_limit import limiter
 
@@ -27,7 +28,7 @@ async def register(
     return await service.register_user(user_in)
 
 
-@router.post("/login", response_model=Token)
+@router.post("/login", response_model=LoginResponse)
 @limiter.limit("5/minute")
 async def login(
     request: Request,
@@ -64,3 +65,15 @@ async def logout(
     """
     await service.logout(refresh_token)
     return None
+
+
+@router.post("/login/2fa", response_model=LoginResponse)
+async def login_2fa(
+    request: LoginStep2Request,
+    service: AuthService = Depends(get_auth_service)
+):
+    """Completes login for users with 2FA enabled.
+
+    Receives temp_token from /login and a TOTP code.
+    """
+    return await service.complete_2fa_login(request.temp_token, request.code)

@@ -1,7 +1,10 @@
 from fastapi import APIRouter, Depends
+
 from src.auth.schemas.user import UserResponse
+from src.auth.schemas.totp import TOTPSetupResponse, TOTPVerifyRequest, TOTPDisableRequest
 from src.auth.models.user import User
 from src.auth.core.dependencies import require_active_user
+from src.auth.services.totp_service import TOTPService, get_totp_service
 
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -15,10 +18,30 @@ async def get_me(
     return current_user
 
 
-# 2FA endpoints placeholder for Phase 5 (Logic to be added in Phase 5 refinement or later)
-@router.post("/me/2fa/enable")
-async def enable_2fa(
-    current_user: User = Depends(require_active_user)
+@router.post("/me/2fa/setup", response_model=TOTPSetupResponse)
+async def setup_2fa(
+    current_user: User = Depends(require_active_user),
+    totp_service: TOTPService = Depends(get_totp_service)
 ):
-    """Enables 2FA for the user."""
-    return {"message": "2FA enrollment initiated (Phase 5 Refinement)"}
+    """Initiates 2FA setup. Returns a URI to generate a QR code."""
+    return await totp_service.setup_totp(current_user)
+
+
+@router.post("/me/2fa/verify")
+async def verify_2fa(
+    request: TOTPVerifyRequest,
+    current_user: User = Depends(require_active_user),
+    totp_service: TOTPService = Depends(get_totp_service)
+):
+    """Verifies the first TOTP code and enables 2FA."""
+    return await totp_service.verify_and_enable_totp(current_user, request.code)
+
+
+@router.post("/me/2fa/disable")
+async def disable_2fa(
+    request: TOTPDisableRequest,
+    current_user: User = Depends(require_active_user),
+    totp_service: TOTPService = Depends(get_totp_service)
+):
+    """Disables 2FA after verifying a TOTP code."""
+    return await totp_service.disable_totp(current_user, request.code)

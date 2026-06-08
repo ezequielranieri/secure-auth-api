@@ -97,3 +97,42 @@ def decode_token(token: str) -> dict[str, Any]:
     return jwt.decode(
         token, settings.secret_key, algorithms=[settings.algorithm]
     )
+
+
+def create_temp_token(subject: str) -> str:
+    """Creates a short-lived temporary token for 2FA pending state.
+
+    Args:
+        subject: The user ID.
+
+    Returns:
+        A JWT token string valid for 5 minutes with type '2fa_pending'.
+    """
+    expires = timedelta(minutes=5)
+    token, _ = create_token(subject, expires, token_type="2fa_pending")
+    return token
+
+
+def decode_temp_token(token: str) -> dict:
+    """Decodes and validates a 2FA pending token.
+
+    Args:
+        token: The temporary JWT token.
+
+    Returns:
+        The decoded payload.
+
+    Raises:
+        HTTPException: If token is invalid or not of type '2fa_pending'.
+    """
+    from fastapi import HTTPException, status
+    try:
+        payload = decode_token(token)
+        if payload.get("type") != "2fa_pending":
+            raise ValueError("Invalid token type")
+        return payload
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired temporary token"
+        )
