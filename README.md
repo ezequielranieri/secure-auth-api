@@ -130,10 +130,14 @@ API docs available at `http://localhost:8000/api/v1/docs`
 | Method | Endpoint | Description |
 |---|---|---|
 | POST | `/api/v1/auth/register` | Register new account (rate limited) |
-| POST | `/api/v1/auth/login` | Authenticate, receive token pair |
+| POST | `/api/v1/auth/login` | Authenticate, receive token pair or 2FA prompt |
+| POST | `/api/v1/auth/login/2fa` | Complete login with TOTP code |
 | POST | `/api/v1/auth/refresh` | Rotate tokens |
 | POST | `/api/v1/auth/logout` | Revoke session |
 | GET | `/api/v1/users/me` | Authenticated user profile |
+| POST | `/api/v1/users/me/2fa/setup` | Initiate 2FA setup, get QR URI |
+| POST | `/api/v1/users/me/2fa/verify` | Verify first TOTP code, enable 2FA |
+| POST | `/api/v1/users/me/2fa/disable` | Disable 2FA with TOTP confirmation |
 
 ---
 
@@ -160,14 +164,21 @@ Refresh token verification previously iterated all active tokens for a user runn
 **AuthService → Dependency Injection**
 Refactored AuthService from @staticmethod methods to an injectable class instantiated via FastAPI's Depends() system. get_auth_service() binds the DB session at request time, decoupling the router from the implementation and making the service independently testable.
 
+**Test Suite (34 tests)**
+The project had existing tests that were broken after the DI refactor and the create_refresh_token tuple change. Fixed all unit and integration tests, then expanded coverage to include: token rotation reuse rejection, brute force lockout, access token used as refresh token rejection, and duplicate email registration. 34 tests passing across unit and integration layers.
+
+**Two-Factor Authentication via TOTP**
+Implemented a full 2FA flow using pyotp. Setup generates a provisioning URI for any authenticator app. Login is a two-step process when 2FA is active: first step returns a short-lived temp_token (5 min, type 2fa_pending), second step at /auth/login/2fa validates the TOTP code and issues full tokens. Disable requires TOTP confirmation. All operations are audit logged.
+
 ### 🗺 Roadmap
 
 - [x] Distributed rate limiting with Redis backend
 - [x] O(1) token lookup via JTI index
 - [x] Dependency injection for AuthService
+- [x] Test suite (34 tests, unit + integration)
+- [x] Two-Factor Authentication via TOTP
 - [ ] PostgreSQL migration (replace aiosqlite for production concurrency)
 - [ ] Token Family Tracking (detect and block token reuse attacks)
-- [ ] Two-Factor Authentication via TOTP
 - [ ] Prometheus metrics (`login_attempts_total`, `lockouts_total`)
 - [ ] Secrets Manager integration
 
