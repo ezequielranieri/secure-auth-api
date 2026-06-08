@@ -96,12 +96,18 @@ class AuthService:
             )
 
         # Check if account is locked
-        if user.locked_until and user.locked_until > datetime.now(timezone.utc):
-            log_audit("login_failed", {"user_id": str(user.id), "reason": "account_locked"})
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Account is locked until {user.locked_until}"
-            )
+        if user.locked_until:
+            # Handle potential naive datetime from some DBs like SQLite
+            locked_until = user.locked_until
+            if locked_until.tzinfo is None:
+                locked_until = locked_until.replace(tzinfo=timezone.utc)
+            
+            if locked_until > datetime.now(timezone.utc):
+                log_audit("login_failed", {"user_id": str(user.id), "reason": "account_locked"})
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Account is locked until {user.locked_until}"
+                )
 
         if not user.is_active:
             log_audit("login_failed", {"user_id": str(user.id), "reason": "user_inactive"})

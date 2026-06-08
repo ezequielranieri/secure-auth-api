@@ -55,3 +55,13 @@ class TestUserSchemas:
         with pytest.raises(ValidationError) as excinfo:
             UserRegister(**data)
         assert "Password must contain at least one digit" in str(excinfo.value)
+
+    def test_user_register_password_too_long(self):
+        """Password exceeding 72 bytes should raise ValidationError."""
+        data = {
+            "email": "test@example.com",
+            "password": "Password1" + "a" * 70  # Over 72 bytes
+        }
+        with pytest.raises(ValidationError) as excinfo:
+            UserRegister(**data)
+        assert "Password must not exceed 72 characters" in str(excinfo.value)

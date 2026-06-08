@@ -79,3 +79,48 @@ class TestAuthRoutes:
         # 3. Verify token is revoked by trying to refresh again
         refresh_response = await client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token})
         assert refresh_response.status_code == 401
+
+    async def test_refresh_token_reuse_rejected(self, client: AsyncClient):
+        """Should reject a refresh token that has already been rotated."""
+        reg_data = {"email": "reuse@example.com", "password": "Password123"}
+        await client.post("/api/v1/auth/register", json=reg_data)
+        login_response = await client.post("/api/v1/auth/login", json=reg_data)
+        original_refresh = login_response.json()["refresh_token"]
+
+        # Use the refresh token once (rotates it)
+        await client.post("/api/v1/auth/refresh", json={"refresh_token": original_refresh})
+
+        # Try to use the original (now revoked) token again
+        response = await client.post("/api/v1/auth/refresh", json={"refresh_token": original_refresh})
+        assert response.status_code == 401
+
+    async def test_brute_force_lockout(self, client: AsyncClient):
+        """Should lock account after 5 failed login attempts."""
+        reg_data = {"email": "bruteforce@example.com", "password": "Password123"}
+        await client.post("/api/v1/auth/register", json=reg_data)
+
+        wrong_login = {"email": "bruteforce@example.com", "password": "WrongPassword1"}
+        for _ in range(5):
+            await client.post("/api/v1/auth/login", json=wrong_login)
+
+        # 6th attempt should be locked
+        response = await client.post("/api/v1/auth/login", json=wrong_login)
+        assert response.status_code == 403
+        assert "locked" in response.json()["detail"].lower()
+
+    async def test_access_token_used_as_refresh_rejected(self, client: AsyncClient):
+        """Should reject an access token used in the refresh endpoint."""
+        reg_data = {"email": "wrongtoken@example.com", "password": "Password123"}
+        await client.post("/api/v1/auth/register", json=reg_data)
+        login_response = await client.post("/api/v1/auth/login", json=reg_data)
+        access_token = login_response.json()["access_token"]
+
+        response = await client.post("/api/v1/auth/refresh", json={"refresh_token": access_token})
+        assert response.status_code == 401
+
+    async def test_register_duplicate_email(self, client: AsyncClient):
+        """Should reject registration with an already used email."""
+        reg_data = {"email": "duplicate@example.com", "password": "Password123"}
+        await client.post("/api/v1/auth/register", json=reg_data)
+        response = await client.post("/api/v1/auth/register", json=reg_data)
+        assert response.status_code == 400
