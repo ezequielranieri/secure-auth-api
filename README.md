@@ -94,7 +94,9 @@ internal limit.
 | **Passlib (Bcrypt)** | Password hashing |
 | **SlowAPI + Redis** | Distributed rate limiting |
 | **Structlog** | Structured JSON logging |
-| **aiosqlite** | Async SQLite driver (dev) |
+| **asyncpg** | Async PostgreSQL driver (production) |
+| **aiosqlite** | Async SQLite driver (testing only) |
+| **prometheus-client** | Metrics endpoint for observability |
 
 ---
 
@@ -108,8 +110,8 @@ git clone https://github.com/ezequielranieri/secure-auth-api.git
 cd secure-auth-api
 cp .env.example .env  # set your SECRET_KEY
 
-# Start Redis
-docker compose up -d
+# Start PostgreSQL and Redis
+docker compose up -d postgres redis
 
 # Install dependencies
 pip install -e .
@@ -170,6 +172,12 @@ The project had existing tests that were broken after the DI refactor and the cr
 **Two-Factor Authentication via TOTP**
 Implemented a full 2FA flow using pyotp. Setup generates a provisioning URI for any authenticator app. Login is a two-step process when 2FA is active: first step returns a short-lived temp_token (5 min, type 2fa_pending), second step at /auth/login/2fa validates the TOTP code and issues full tokens. Disable requires TOTP confirmation. All operations are audit logged.
 
+**PostgreSQL Migration + Docker Compose**
+Migrated from aiosqlite/SQLite to asyncpg/PostgreSQL for production. SQLite is retained exclusively for the test suite via conftest.py override, keeping tests fast and isolated. Docker Compose now orchestrates three services: PostgreSQL 16, Redis 7, and the app itself — any developer can run the full stack with a single `docker compose up`.
+
+**Prometheus Metrics**
+Exposed a /metrics endpoint via prometheus-client compatible with any Prometheus scraper. Counters instrument five critical security events: login attempts (labeled success/failure), account lockouts, token refreshes, 2FA attempts, and registrations. Metrics are incremented directly in the service layer, not middleware, keeping instrumentation close to the business logic.
+
 ### 🗺 Roadmap
 
 - [x] Distributed rate limiting with Redis backend
@@ -177,10 +185,10 @@ Implemented a full 2FA flow using pyotp. Setup generates a provisioning URI for 
 - [x] Dependency injection for AuthService
 - [x] Test suite (34 tests, unit + integration)
 - [x] Two-Factor Authentication via TOTP
-- [ ] PostgreSQL migration (replace aiosqlite for production concurrency)
+- [x] PostgreSQL migration + Docker Compose
+- [x] Prometheus metrics
 - [ ] Token Family Tracking (detect and block token reuse attacks)
-- [ ] Prometheus metrics (`login_attempts_total`, `lockouts_total`)
-- [ ] Secrets Manager integration
+- [ ] Secrets Manager (documented decision: abstraction deferred — current env-var approach is sufficient for the threat model; a SecretsProvider interface would add Vault/AWS SM as backends when deploying to managed infrastructure)
 
 ---
 
