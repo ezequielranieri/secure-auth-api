@@ -11,7 +11,7 @@ class Settings(BaseSettings):
         algorithm: Algorithm used for JWT signing.
         access_token_expire_minutes: Expiration time for access tokens.
         refresh_token_expire_days: Expiration time for refresh tokens.
-        database_url: Connection string for the database.
+        database_url: Async database connection string. Uses asyncpg for PostgreSQL.
         redis_url: Connection string for the Redis storage.
         max_failed_login_attempts: Maximum number of failed login attempts before lockout.
         lockout_duration_minutes: Duration of account lockout in minutes.
@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 7
 
     # Database
-    database_url: str = "sqlite+aiosqlite:///./auth.db"
+    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/secure_auth"
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"

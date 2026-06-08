@@ -17,6 +17,7 @@ dependencies = [
     "slowapi[redis]>=0.1.9",
     "redis>=3.4.1,<6.0.0",
     "structlog>=24.2.0",
+    "asyncpg>=0.29.0",
     "aiosqlite>=0.20.0",
 ]
 
