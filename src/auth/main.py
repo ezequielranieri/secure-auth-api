@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from prometheus_client import make_asgi_app
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -19,6 +20,10 @@ app = FastAPI(
     redoc_url="/api/v1/redoc",
     openapi_url="/api/v1/openapi.json",
 )
+
+# Mount Prometheus metrics endpoint
+metrics_app = make_asgi_app()
+app.mount("/metrics", metrics_app)
 
 # Set up rate limiting
 app.state.limiter = limiter

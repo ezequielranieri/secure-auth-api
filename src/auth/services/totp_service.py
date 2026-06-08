@@ -10,13 +10,19 @@ from fastapi import Depends
 from src.auth.database import get_db
 from src.auth.models.user import User
 from src.auth.core import security
+from src.auth.core.metrics import two_fa_attempts
 
 
 logger = structlog.get_logger(__name__)
 
 
 def log_audit(event: str, detail: dict[str, Any]) -> None:
-    """Logs a security audit event in a structured format."""
+    """Logs a security audit event in a structured format.
+
+    Args:
+        event: The name of the audit event.
+        detail: A dictionary with event details.
+    """
     detail_str = " | ".join(f"{k}={v}" for k, v in detail.items())
     logger.info(f"AUDITORIA | evento={event} | {detail_str}")
 
@@ -85,6 +91,7 @@ class TOTPService:
         totp = pyotp.TOTP(user.totp_secret)
         if not totp.verify(code):
             log_audit("totp_verify_failed", {"user_id": str(user.id)})
+            two_fa_attempts.labels(result="failure").inc()
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid TOTP code"
@@ -94,6 +101,7 @@ class TOTPService:
         await self.db.commit()
 
         log_audit("totp_enabled", {"user_id": str(user.id)})
+        two_fa_attempts.labels(result="success").inc()
         return {"message": "2FA enabled successfully"}
 
     async def disable_totp(self, user: User, code: str) -> dict[str, str]:

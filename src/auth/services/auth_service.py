@@ -15,6 +15,12 @@ from src.auth.schemas.user import UserRegister, UserLogin
 from src.auth.schemas.token import Token
 from src.auth.schemas.totp import LoginResponse
 from src.auth.core import security
+from src.auth.core.metrics import (
+    login_attempts,
+    account_lockouts,
+    token_refresh,
+    registrations,
+)
 
 
 logger = structlog.get_logger(__name__)
@@ -53,6 +59,7 @@ class AuthService:
         result = await self.db.execute(select(User).where(User.email == user_in.email))
         if result.scalar_one_or_none():
             log_audit("registration_failed", {"email": user_in.email, "reason": "email_exists"})
+            registrations.labels(result="failure").inc()
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Email already registered"
@@ -70,6 +77,7 @@ class AuthService:
         await self.db.refresh(new_user)
 
         log_audit("user_registered", {"user_id": str(new_user.id), "email": new_user.email})
+        registrations.labels(result="success").inc()
         return new_user
 
     async def login_user(self, login_data: UserLogin) -> LoginResponse:
@@ -91,6 +99,7 @@ class AuthService:
 
         if not user:
             log_audit("login_failed", {"email": login_data.email, "reason": "user_not_found"})
+            login_attempts.labels(result="failure").inc()
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid credentials"
@@ -105,6 +114,7 @@ class AuthService:
             
             if locked_until > datetime.now(timezone.utc):
                 log_audit("login_failed", {"user_id": str(user.id), "reason": "account_locked"})
+                login_attempts.labels(result="failure").inc()
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail=f"Account is locked until {user.locked_until}"
@@ -112,6 +122,7 @@ class AuthService:
 
         if not user.is_active:
             log_audit("login_failed", {"user_id": str(user.id), "reason": "user_inactive"})
+            login_attempts.labels(result="failure").inc()
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Account is inactive"
@@ -126,9 +137,11 @@ class AuthService:
                 lock_duration = timedelta(minutes=settings.lockout_duration_minutes)
                 user.locked_until = datetime.now(timezone.utc) + lock_duration
                 log_audit("account_locked", {"user_id": str(user.id), "email": user.email})
+                account_lockouts.inc()
             
             await self.db.commit()
             log_audit("login_failed", {"user_id": str(user.id), "reason": "invalid_password"})
+            login_attempts.labels(result="failure").inc()
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid credentials"
@@ -148,6 +161,7 @@ class AuthService:
         if is_2fa_enabled:
             temp_token = security.create_temp_token(str(user_id))
             log_audit("login_2fa_required", {"user_id": str(user_id)})
+            login_attempts.labels(result="success").inc()
             return LoginResponse(two_fa_required=True, temp_token=temp_token)
 
         access_token = security.create_access_token(user_id)
@@ -163,6 +177,7 @@ class AuthService:
         await self.db.commit()
 
         log_audit("login_success", {"user_id": str(user_id)})
+        login_attempts.labels(result="success").inc()
 
         return LoginResponse(
             access_token=access_token,
@@ -238,6 +253,7 @@ class AuthService:
             user_id = payload.get("sub")
         except Exception:
             log_audit("token_refresh_failed", {"reason": "invalid_token"})
+            token_refresh.labels(result="failure").inc()
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid refresh token"
@@ -246,6 +262,7 @@ class AuthService:
         jti = payload.get("jti")
         if not jti:
             log_audit("token_refresh_failed", {"reason": "missing_jti"})
+            token_refresh.labels(result="failure").inc()
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid refresh token"
@@ -262,6 +279,7 @@ class AuthService:
 
         if not target_token:
             log_audit("token_refresh_failed", {"user_id": user_id, "reason": "token_not_found_or_revoked"})
+            token_refresh.labels(result="failure").inc()
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Refresh token revoked or invalid"
@@ -285,6 +303,7 @@ class AuthService:
         await self.db.commit()
 
         log_audit("token_refreshed", {"user_id": user_id})
+        token_refresh.labels(result="success").inc()
 
         return Token(
             access_token=access_token,
