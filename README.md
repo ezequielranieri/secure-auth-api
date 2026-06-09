@@ -91,7 +91,8 @@ internal limit.
 | **SQLAlchemy 2.0** | Async ORM |
 | **Pydantic v2** | Data validation & settings |
 | **Alembic** | Database migrations |
-| **Passlib (Bcrypt)** | Password hashing |
+| **bcrypt** | Password hashing |
+| **PyJWT** | JWT token creation and validation |
 | **SlowAPI + Redis** | Distributed rate limiting |
 | **Structlog** | Structured JSON logging |
 | **asyncpg** | Async PostgreSQL driver (production) |
