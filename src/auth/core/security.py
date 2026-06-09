@@ -2,15 +2,10 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from jose import jwt
-from passlib.context import CryptContext
+import bcrypt
+import jwt
 
 from src.auth.config import settings
-
-
-# Password hashing configuration
-# Using bcrypt with cost factor 12 as per proyecto_auth_api.md
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
 
 
 def hash_password(password: str) -> str:
@@ -20,9 +15,12 @@ def hash_password(password: str) -> str:
         password: The plain-text password to hash.
 
     Returns:
-        The hashed password.
+        The hashed password as a string.
     """
-    return pwd_context.hash(password)
+    password_bytes = password.encode("utf-8")
+    salt = bcrypt.gensalt(rounds=12)
+    hashed = bcrypt.hashpw(password_bytes, salt)
+    return hashed.decode("utf-8")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -35,7 +33,10 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     Returns:
         True if the passwords match, False otherwise.
     """
-    return pwd_context.verify(plain_password, hashed_password)
+    return bcrypt.checkpw(
+        plain_password.encode("utf-8"),
+        hashed_password.encode("utf-8")
+    )
 
 
 def create_token(
@@ -56,12 +57,12 @@ def create_token(
     now = datetime.now(timezone.utc)
     expire = now + expires_delta
     jti = str(uuid.uuid4())
-    to_encode = {
+    to_encode: dict[str, Any] = {
         "sub": str(subject),
         "exp": expire,
         "type": token_type,
         "iat": now,
-        "jti": jti
+        "jti": jti,
     }
     encoded_jwt = jwt.encode(
         to_encode, settings.secret_key, algorithm=settings.algorithm
@@ -92,11 +93,12 @@ def decode_token(token: str) -> dict[str, Any]:
         The decoded payload.
 
     Raises:
-        jwt.JWTError: If the token is invalid or expired.
+        jwt.InvalidTokenError: If the token is invalid or expired.
     """
-    return jwt.decode(
+    payload: dict[str, Any] = jwt.decode(
         token, settings.secret_key, algorithms=[settings.algorithm]
     )
+    return payload
 
 
 def create_temp_token(subject: str) -> str:
@@ -113,7 +115,7 @@ def create_temp_token(subject: str) -> str:
     return token
 
 
-def decode_temp_token(token: str) -> dict:
+def decode_temp_token(token: str) -> dict[str, Any]:
     """Decodes and validates a 2FA pending token.
 
     Args:

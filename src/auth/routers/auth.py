@@ -20,12 +20,13 @@ async def register(
     request: Request,
     user_in: UserRegister,
     service: AuthService = Depends(get_auth_service)
-):
+) -> UserResponse:
     """Registers a new user. 
     
     Rate limited to 3 registrations per hour per IP.
     """
-    return await service.register_user(user_in)
+    user = await service.register_user(user_in)
+    return UserResponse.model_validate(user)
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -34,7 +35,7 @@ async def login(
     request: Request,
     login_data: UserLogin,
     service: AuthService = Depends(get_auth_service)
-):
+) -> LoginResponse:
     """Authenticates a user and returns JWT tokens.
     
     Rate limited to 5 attempts per minute per IP.
@@ -46,7 +47,7 @@ async def login(
 async def refresh_token(
     refresh_token: str = Body(..., embed=True),
     service: AuthService = Depends(get_auth_service)
-):
+) -> Token:
     """Refreshes access and refresh tokens.
     
     Receives refresh_token in the request body.
@@ -58,7 +59,7 @@ async def refresh_token(
 async def logout(
     refresh_token: str = Body(..., embed=True),
     service: AuthService = Depends(get_auth_service)
-):
+) -> None:
     """Invalidates a refresh token.
     
     Receives refresh_token in the request body.
@@ -71,7 +72,7 @@ async def logout(
 async def login_2fa(
     request: LoginStep2Request,
     service: AuthService = Depends(get_auth_service)
-):
+) -> LoginResponse:
     """Completes login for users with 2FA enabled.
 
     Receives temp_token from /login and a TOTP code.

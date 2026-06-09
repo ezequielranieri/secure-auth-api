@@ -54,7 +54,7 @@ async def get_current_user(
             
         user_id = uuid.UUID(token_data.sub)
             
-    except (jwt.JWTError, ValidationError, ValueError):
+    except (jwt.InvalidTokenError, ValidationError, ValueError):
         raise credentials_exception
 
     # Fetch user from DB

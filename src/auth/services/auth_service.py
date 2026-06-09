@@ -169,7 +169,6 @@ class AuthService:
 
         new_refresh_token = RefreshToken(
             jti=refresh_jti,
-            token=security.hash_password(refresh_token_str),
             user_id=user_id,
             expires_at=datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
         )
@@ -227,7 +226,6 @@ class AuthService:
 
         new_refresh_token = RefreshToken(
             jti=refresh_jti,
-            token=security.hash_password(refresh_token_str),
             user_id=user.id,
             expires_at=datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
         )
@@ -295,7 +293,6 @@ class AuthService:
         # Store new hashed refresh token
         new_db_token = RefreshToken(
             jti=new_jti,
-            token=security.hash_password(new_refresh_token_str),
             user_id=uuid.UUID(user_id),
             expires_at=datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
         )

@@ -27,7 +27,12 @@ app.mount("/metrics", metrics_app)
 
 # Set up rate limiting
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+from typing import cast
+from starlette.types import ExceptionHandler
+app.add_exception_handler(
+    RateLimitExceeded,
+    cast(ExceptionHandler, _rate_limit_exceeded_handler)
+)
 
 # Register Middleware (Bottom to top execution for 'dispatch' style)
 app.add_middleware(AuditLogMiddleware)

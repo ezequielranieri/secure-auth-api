@@ -1,6 +1,6 @@
 import pytest
 from datetime import timedelta
-from jose import jwt
+import jwt
 from src.auth.core import security
 from src.auth.config import settings
 
@@ -63,14 +63,14 @@ class TestSecurity:
         assert isinstance(jti, str)
 
     def test_decode_invalid_token(self):
-        """Decoding an invalid token should raise JWTError."""
-        with pytest.raises(jwt.JWTError):
+        """Decoding an invalid token should raise InvalidTokenError."""
+        with pytest.raises(jwt.InvalidTokenError):
             security.decode_token("invalid-token")
 
     def test_token_expiration(self):
-        """Expired token should raise JWTError."""
+        """Expired token should raise ExpiredSignatureError."""
         subject = "test-user-id"
         expires_delta = timedelta(minutes=-1)
         token, _ = security.create_token(subject, expires_delta)
-        with pytest.raises(jwt.JWTError):
+        with pytest.raises(jwt.ExpiredSignatureError):
             security.decode_token(token)
