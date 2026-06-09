@@ -178,6 +178,9 @@ Migrated from aiosqlite/SQLite to asyncpg/PostgreSQL for production. SQLite is r
 **Prometheus Metrics**
 Exposed a /metrics endpoint via prometheus-client compatible with any Prometheus scraper. Counters instrument five critical security events: login attempts (labeled success/failure), account lockouts, token refreshes, 2FA attempts, and registrations. Metrics are incremented directly in the service layer, not middleware, keeping instrumentation close to the business logic.
 
+**Security Library Modernization + Type Safety**
+Replaced passlib (abandoned since 2020) and python-jose with bcrypt and PyJWT directly. This eliminates the bcrypt version incompatibility that forced a downgrade to 3.2.2. Removed the redundant `token` column from `refresh_tokens` — it stored a hash of the JTI which was already in plaintext in the same row, adding no security value. Fixed all 14 mypy errors across routers and security core. Result: 0 mypy errors, 34 tests passing, modern dependency stack.
+
 ### 🗺 Roadmap
 
 - [x] Distributed rate limiting with Redis backend
@@ -187,6 +190,7 @@ Exposed a /metrics endpoint via prometheus-client compatible with any Prometheus
 - [x] Two-Factor Authentication via TOTP
 - [x] PostgreSQL migration + Docker Compose
 - [x] Prometheus metrics
+- [x] Security library modernization (bcrypt + PyJWT, mypy clean)
 - [ ] Token Family Tracking (detect and block token reuse attacks)
 - [ ] Secrets Manager (documented decision: abstraction deferred — current env-var approach is sufficient for the threat model; a SecretsProvider interface would add Vault/AWS SM as backends when deploying to managed infrastructure)
 
